@@ -27,3 +27,47 @@ export function encodeBulkString(text: string): string {
 export function encodeNull(): string {
   return `$-1\r\n`;
 }
+
+export function parseCommand(
+  buf: Buffer,
+): { args: string[]; consumed: number } | null {
+  const result: string[] = [];
+  if (buf[0] !== "*".charCodeAt(0)) {
+    throw new Error("missing *");
+  }
+
+  let pos = 0;
+
+  const lenEnd = buf.indexOf("\r\n", pos);
+  if (lenEnd === -1) throw new Error("can not be negative number");
+
+  const count = Number(buf.toString("utf-8", pos + 1, lenEnd));
+  if (!Number.isInteger(count) || count < 0)
+    throw new Error("number has to be an integer and not negative");
+
+  pos = lenEnd + 2;
+
+  for (let i = 0; i < count; i++) {
+    if (buf[pos] !== "$".charCodeAt(0)) {
+      throw new Error("missing $");
+    }
+
+    const lenEnd1 = buf.indexOf("\r\n", pos);
+    if (lenEnd1 === -1) throw new Error("can not be negative number");
+
+    const len = Number(buf.toString("utf-8", pos + 1, lenEnd1));
+    if (!Number.isInteger(len) || len < 0)
+      throw new Error("number has to be an integer and not negative");
+
+    pos = lenEnd1 + 2;
+
+    result.push(buf.toString("utf-8", pos, pos + len));
+    if (buf.toString("utf-8", pos + len, pos + len + 2) !== "\r\n") {
+      throw new Error("bulk string not ends with \\r\\n");
+    }
+
+    pos += len + 2;
+  }
+
+  return { args: result, consumed: pos };
+}

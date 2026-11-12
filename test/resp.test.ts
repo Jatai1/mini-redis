@@ -5,7 +5,9 @@ import {
   encodeError,
   encodeBulkString,
   encodeNull,
+  parseCommand,
 } from "../src/resp.js";
+import { parse } from "node:path";
 
 describe("encodeSimpleString", () => {
   it("encodes OK", () => {
@@ -59,5 +61,47 @@ describe("encodeNull", () => {
   });
   it("encodes empty string and compares with null", () => {
     expect(encodeNull()).not.toBe("$0\r\n\r\n");
+  });
+});
+
+describe("parseCommand", () => {
+  it("parses PING", () => {
+    expect(parseCommand(Buffer.from("*1\r\n$4\r\nPING\r\n"))).toEqual({
+      args: ["PING"],
+      consumed: 14,
+    });
+  });
+
+  it("parses SET a 1", () => {
+    expect(
+      parseCommand(Buffer.from("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n")),
+    ).toEqual({ args: ["SET", "a", "1"], consumed: 27 });
+  });
+
+  it("parses Việt", () => {
+    expect(parseCommand(Buffer.from("*1\r\n$6\r\nViệt\r\n"))).toEqual({
+      args: ["Việt"],
+      consumed: 16,
+    });
+  });
+
+  it("throws when parses Việt but only counts 4 bytes", () => {
+    expect(() => parseCommand(Buffer.from("*1\r\n$4\r\nViệt\r\n"))).toThrow();
+  });
+
+  it("throws when missing $", () => {
+    expect(() => parseCommand(Buffer.from("*1\r\n4\r\nViệt\r\n"))).toThrow();
+  });
+
+  it("throws when parses resp with string as number", () => {
+    expect(() => parseCommand(Buffer.from("*abc\r\n"))).toThrow();
+  });
+
+  it("throws when bulk length is not a number", () => {
+    expect(() => parseCommand(Buffer.from("*1\r\n$x"))).toThrow();
+  });
+
+  it("throws when parses without \\r\\n", () => {
+    expect(() => parseCommand(Buffer.from("*1"))).toThrow();
   });
 });
