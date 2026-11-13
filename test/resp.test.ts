@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, test } from "vitest";
 import {
   encodeSimpleString,
   encodeInteger,
@@ -98,10 +98,42 @@ describe("parseCommand", () => {
   });
 
   it("throws when bulk length is not a number", () => {
-    expect(() => parseCommand(Buffer.from("*1\r\n$x"))).toThrow();
+    expect(() => parseCommand(Buffer.from("*1\r\n$x\r\n"))).toThrow();
   });
 
-  it("throws when parses without \\r\\n", () => {
-    expect(() => parseCommand(Buffer.from("*1"))).toThrow();
+  it("returns null when \\r\\n has not arrived", () => {
+    expect(parseCommand(Buffer.from("*1"))).toBe(null);
   });
+});
+
+test("SET a 1 sends one byte at time", () => {
+  const full = Buffer.from("*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n");
+
+  for (let i = 0; i < full.length; i++) {
+    expect(parseCommand(full.subarray(0, i))).toBe(null);
+  }
+
+  const result = parseCommand(full);
+  expect(result?.args).toEqual(["SET", "a", "1"]);
+  expect(result?.consumed).toBe(full.length);
+  expect(() => parseCommand(Buffer.from("*1\r\n$x\r\n"))).toThrow();
+});
+
+test("sends 3 connected commands in one buffer", () => {
+  let buf = Buffer.from(
+    "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\n1\r\n" +
+      "*1\r\n$4\r\nPING\r\n" +
+      "*2\r\n$4\r\nECHO\r\n$2\r\nhi\r\n",
+  );
+
+  const commands: string[][] = [];
+  while (true) {
+    const result = parseCommand(buf);
+    if (result === null) break;
+    commands.push(result.args);
+    buf = buf.subarray(result.consumed);
+  }
+
+  expect(commands).toEqual([["SET", "a", "1"], ["PING"], ["ECHO", "hi"]]);
+  expect(buf.length).toBe(0);
 });
